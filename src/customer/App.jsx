@@ -106,6 +106,7 @@ function App() {
           total: p.total,
           delivery: p.delivery,
           payMethod: 'online',
+          paymentId: p.paymentId || '',
         }),
       }).catch(() => {});
       if (p.items && p.total) {

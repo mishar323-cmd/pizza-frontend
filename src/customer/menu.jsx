@@ -501,13 +501,17 @@ export function CheckoutModal({ open, onClose, onConfirm, items, total, profile,
       setPayError('');
       try {
         const desc = `Заказ Дело в пицце: ${items.map(i => `${i.name}×${i.qty}`).join(', ')}`;
-        // Stash the order so the success page can POST it to /api/orders on return.
-        sessionStorage.setItem('pending-order', JSON.stringify({
-          orderData,
-          items: items.map(i => ({ name: i.name, qty: i.qty, price: i.price })),
-          total: grandTotal,
-          delivery,
-        }));
+        // Metadata YooKassa will echo back to our webhook + return URL.
+        const metadata = {
+          name: orderData.name,
+          phone: orderData.phone,
+          address: orderData.address,
+          comment: orderData.comment,
+          receiveMethod: orderData.receiveMethod,
+          deliveryTime: orderData.deliveryTime,
+          zoneId: orderData.zoneId || '',
+          delivery: String(delivery || 0),
+        };
         const resp = await fetch('/api/create-payment', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -517,9 +521,18 @@ export function CheckoutModal({ open, onClose, onConfirm, items, total, profile,
             returnUrl: window.location.origin + `/?order=success&method=${receiveMethod}&time=${encodeURIComponent(timeMode === 'exact' ? pickedTime : 'asap')}`,
             phone: phone.trim(),
             items: items.map(i => ({ name: i.name, qty: i.qty, price: i.price })),
+            metadata,
           }),
         });
         const data = await resp.json();
+        // Stash for the success-page POST (deduplicated server-side by paymentId).
+        sessionStorage.setItem('pending-order', JSON.stringify({
+          orderData,
+          items: items.map(i => ({ name: i.name, qty: i.qty, price: i.price })),
+          total: grandTotal,
+          delivery,
+          paymentId: data.id || '',
+        }));
         if (data.confirmation?.confirmation_url) {
           window.location.href = data.confirmation.confirmation_url;
         } else {
