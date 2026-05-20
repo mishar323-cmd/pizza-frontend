@@ -44,10 +44,7 @@ function OrderSuccessPage({ method, time, onClose }) {
           : <>Курьер будет у вас примерно <strong>через {timeLabel}</strong>. Пицца едет горячая!</>
         }
       </p>
-      <p style={{fontSize: 14, color: 'var(--ink-mute)', margin: '0 0 32px'}}>
-        Номер заказа и детали придут в СМС.
-      </p>
-      <div style={{display: 'flex', flexDirection: 'column', gap: 12, width: '100%', maxWidth: 320}}>
+      <div style={{display: 'flex', flexDirection: 'column', gap: 12, width: '100%', maxWidth: 320, marginTop: 24}}>
         <a href="https://t.me/delovpizza" target="_blank" rel="noopener noreferrer"
           style={{display:'flex', alignItems:'center', justifyContent:'center', gap:10,
             background:'#229ED9', color:'#fff', borderRadius:'var(--r-pill)',
