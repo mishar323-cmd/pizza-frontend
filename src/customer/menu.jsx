@@ -501,6 +501,13 @@ export function CheckoutModal({ open, onClose, onConfirm, items, total, profile,
       setPayError('');
       try {
         const desc = `Заказ Дело в пицце: ${items.map(i => `${i.name}×${i.qty}`).join(', ')}`;
+        // Stash the order so the success page can POST it to /api/orders on return.
+        sessionStorage.setItem('pending-order', JSON.stringify({
+          orderData,
+          items: items.map(i => ({ name: i.name, qty: i.qty, price: i.price })),
+          total: grandTotal,
+          delivery,
+        }));
         const resp = await fetch('/api/create-payment', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

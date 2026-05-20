@@ -88,6 +88,32 @@ function App() {
   const orderMethod = urlParams.get('method') || 'delivery';
   const orderTime = urlParams.get('time') || 'asap';
 
+  // On YooKassa return, persist the order to /api/orders (DB + Telegram notification).
+  // The pending payload was stashed in sessionStorage right before the redirect.
+  React.useEffect(() => {
+    if (!orderSuccess) return;
+    const raw = sessionStorage.getItem('pending-order');
+    if (!raw) return;
+    sessionStorage.removeItem('pending-order');
+    try {
+      const p = JSON.parse(raw);
+      fetch('/api/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...p.orderData,
+          items: p.items,
+          total: p.total,
+          delivery: p.delivery,
+          payMethod: 'online',
+        }),
+      }).catch(() => {});
+      if (p.items && p.total) {
+        profileState.placeOrder(p.items, p.total, p.orderData?.address || '');
+      }
+    } catch (_e) {}
+  }, [orderSuccess]);
+
   if (orderSuccess) {
     return <OrderSuccessPage method={orderMethod} time={orderTime} onClose={() => {
       window.history.replaceState({}, '', '/');
