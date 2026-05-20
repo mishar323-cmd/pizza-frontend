@@ -209,14 +209,10 @@ function SimpleCard({ item, qty, onAdd, onMinus }) {
 }
 
 /* ======================== Cart Drawer ======================== */
-export function CartDrawer({ open, onClose, items, addToCart, removeFromCart, total, addUpsell, addresses, onCheckout }) {
+export function CartDrawer({ open, onClose, items, addToCart, removeFromCart, total, addUpsell, onCheckout }) {
   const free = FREE_FROM_ZONE_A;
   const remaining = Math.max(0, free - total);
   const progress = Math.min(100, Math.round((total / free) * 100));
-  const favAddr = (addresses || []).find(a => a.favorite) || (addresses || [])[0];
-  const [pickedAddr, setPickedAddr] = React.useState(favAddr?.id);
-  const [customAddr, setCustomAddr] = React.useState('');
-  React.useEffect(() => { if (favAddr && !pickedAddr) setPickedAddr(favAddr.id); }, [favAddr]);
 
   return (
     <>
@@ -293,33 +289,8 @@ export function CartDrawer({ open, onClose, items, addToCart, removeFromCart, to
               <span>Итого</span>
               <span>{total} ₽</span>
             </div>
-            <div className="addr-picker">
-              <small style={{color:'var(--ink-mute)', fontSize:12, fontWeight:600, textTransform:'uppercase', letterSpacing:'.04em'}}>Доставить на</small>
-              {(addresses || []).map(a => (
-                <button key={a.id} className={`addr-pick ${pickedAddr === a.id ? 'on' : ''}`} onClick={() => setPickedAddr(a.id)}>
-                  <span className="radio"/>
-                  <span>
-                    <strong>{a.label || a.text}</strong>
-                    {a.label && <small>{a.text}</small>}
-                  </span>
-                </button>
-              ))}
-              <button className={`addr-pick ${pickedAddr === '__custom__' ? 'on' : ''}`} onClick={() => setPickedAddr('__custom__')}>
-                <span className="radio"/>
-                <span><strong>Другой адрес</strong></span>
-              </button>
-              {pickedAddr === '__custom__' && (
-                <input
-                  className="addr-custom-input"
-                  placeholder="Улица, дом, квартира"
-                  value={customAddr}
-                  onChange={e => setCustomAddr(e.target.value)}
-                  autoFocus
-                />
-              )}
-            </div>
-            <button className="btn btn-primary checkout" onClick={() => onCheckout && onCheckout(pickedAddr === '__custom__' ? customAddr || '__custom__' : pickedAddr)}>
-              Оформить за 35 минут
+            <button className="btn btn-primary checkout" onClick={() => onCheckout && onCheckout()}>
+              Перейти к заказу
               <Ic name="arrow-right" size={16}/>
             </button>
           </div>
