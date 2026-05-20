@@ -235,7 +235,7 @@ function App() {
         profile={profileState.profile}
         addresses={profileState.profile.addresses}
         onConfirm={(data) => {
-          const delivery = data.receiveMethod === 'pickup' ? 0 : (total >= 1000 ? 0 : 150);
+          const delivery = data.delivery ?? (data.receiveMethod === 'pickup' ? 0 : 0);
           const grandTotal = total + delivery;
           profileState.placeOrder(cart, grandTotal, data.address);
           fetch('/api/orders', {

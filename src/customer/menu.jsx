@@ -4,6 +4,9 @@ import React from 'react';
 import { PIZZA_DATA, ROMAN_DATA, SANDWICH_DATA, SNACK_DATA, DRINK_DATA, DESSERT_DATA, SIZES, CRUSTS, ADDONS } from '../data/menu.js';
 import Ic from '../shared/icons.jsx';
 import { HalvesCard } from './halves.jsx';
+import { ZONES, computeDelivery, findZoneByCoords, geocodeAddress } from './zones.js';
+
+const FREE_FROM_ZONE_A = ZONES[0].freeFrom;
 
 export function MenuSection({ cart, addToCart, removeFromCart, getQty, openDetail, openHalves }) {
   const [cat, setCat] = React.useState('pizza');
@@ -207,7 +210,7 @@ function SimpleCard({ item, qty, onAdd, onMinus }) {
 
 /* ======================== Cart Drawer ======================== */
 export function CartDrawer({ open, onClose, items, addToCart, removeFromCart, total, addUpsell, addresses, onCheckout }) {
-  const free = 1000;
+  const free = FREE_FROM_ZONE_A;
   const remaining = Math.max(0, free - total);
   const progress = Math.min(100, Math.round((total / free) * 100));
   const favAddr = (addresses || []).find(a => a.favorite) || (addresses || [])[0];
@@ -285,10 +288,10 @@ export function CartDrawer({ open, onClose, items, addToCart, removeFromCart, to
         {items.length > 0 && (
           <div className="drawer-foot">
             <div className="row"><span>Сумма</span><span>{total} ₽</span></div>
-            <div className="row"><span>Доставка</span><span>{total >= free ? 'бесплатно' : '150 ₽'}</span></div>
+            <div className="row"><span>Доставка</span><span>{total >= FREE_FROM_ZONE_A ? 'бесплатно в Зоне А' : 'по адресу при оформлении'}</span></div>
             <div className="row total" style={{display:'flex', justifyContent:'space-between'}}>
               <span>Итого</span>
-              <span>{total + (total >= free ? 0 : 150)} ₽</span>
+              <span>{total} ₽</span>
             </div>
             <div className="addr-picker">
               <small style={{color:'var(--ink-mute)', fontSize:12, fontWeight:600, textTransform:'uppercase', letterSpacing:'.04em'}}>Доставить на</small>
@@ -408,8 +411,6 @@ export function PizzaDetail({ pizza, onClose, onAdd }) {
 
 /* ======================== Checkout Modal ======================== */
 export function CheckoutModal({ open, onClose, onConfirm, items, total, profile, addresses }) {
-  const free = 1000;
-
   const [name, setName] = React.useState('');
   const [phone, setPhone] = React.useState('');
   const [comment, setComment] = React.useState('');
@@ -419,6 +420,8 @@ export function CheckoutModal({ open, onClose, onConfirm, items, total, profile,
   const [payMethod, setPayMethod] = React.useState('online'); // 'online' | 'cash'
   const [timeMode, setTimeMode] = React.useState('asap'); // 'asap' | 'exact'
   const [pickedTime, setPickedTime] = React.useState('');
+  // zoneInfo: { status: 'idle'|'loading'|'found'|'not-found'|'error', zone, delivery }
+  const [zoneInfo, setZoneInfo] = React.useState({ status: 'idle', zone: null, delivery: null });
 
   // min time = now + 1 hour, rounded to next 15 min, within 10:00–22:30 MSK
   const getMinTime = () => {
@@ -458,11 +461,7 @@ export function CheckoutModal({ open, onClose, onConfirm, items, total, profile,
   const [paying, setPaying] = React.useState(false);
   const [payError, setPayError] = React.useState('');
 
-  if (!open) return null;
-
   const isPickup = receiveMethod === 'pickup';
-  const delivery = isPickup ? 0 : (total >= free ? 0 : 150);
-  const grandTotal = total + delivery;
 
   const resolvedAddr = isPickup
     ? 'Романовская 5, подъезд 10 (самовывоз)'
@@ -470,11 +469,61 @@ export function CheckoutModal({ open, onClose, onConfirm, items, total, profile,
       ? customAddr
       : (addresses || []).find(a => a.id === pickedAddr)?.text || customAddr;
 
-  const canSubmit = name.trim() && phone.trim() && (isPickup || resolvedAddr.trim());
+  // Debounced geocode → zone matching → delivery price.
+  React.useEffect(() => {
+    if (isPickup) {
+      setZoneInfo({ status: 'idle', zone: null, delivery: null });
+      return;
+    }
+    const q = (resolvedAddr || '').trim();
+    if (q.length < 5) {
+      setZoneInfo({ status: 'idle', zone: null, delivery: null });
+      return;
+    }
+    setZoneInfo(prev => ({ ...prev, status: 'loading' }));
+    const t = setTimeout(async () => {
+      try {
+        const coords = await geocodeAddress(q);
+        const zone = findZoneByCoords(coords);
+        const delivery = computeDelivery(zone, total);
+        setZoneInfo({
+          status: zone ? 'found' : 'not-found',
+          zone,
+          delivery,
+        });
+      } catch (_e) {
+        setZoneInfo({
+          status: 'error',
+          zone: null,
+          delivery: computeDelivery(null, total),
+        });
+      }
+    }, 500);
+    return () => clearTimeout(t);
+  }, [resolvedAddr, isPickup, total]);
+
+  if (!open) return null;
+
+  const delivery = isPickup ? 0 : (zoneInfo.delivery?.price ?? 0);
+  const grandTotal = total + delivery;
+
+  const addressReady = isPickup || (zoneInfo.status === 'found' || zoneInfo.status === 'not-found' || zoneInfo.status === 'error');
+  const canSubmit = name.trim() && phone.trim() && (isPickup || resolvedAddr.trim()) && addressReady;
 
   const handleSubmit = async () => {
     if (!canSubmit || paying) return;
-    const orderData = { name: name.trim(), phone: phone.trim(), address: resolvedAddr, comment: comment.trim(), receiveMethod, payMethod, deliveryTime: timeMode === 'exact' ? pickedTime : 'asap' };
+    const orderData = {
+      name: name.trim(),
+      phone: phone.trim(),
+      address: resolvedAddr,
+      comment: comment.trim(),
+      receiveMethod,
+      payMethod,
+      deliveryTime: timeMode === 'exact' ? pickedTime : 'asap',
+      delivery,
+      zoneId: zoneInfo.zone?.id || null,
+      zoneName: zoneInfo.zone?.name || (zoneInfo.delivery?.fallback ? 'Адрес вне зон' : null),
+    };
 
     if (payMethod === 'online') {
       setPaying(true);
@@ -528,8 +577,18 @@ export function CheckoutModal({ open, onClose, onConfirm, items, total, profile,
               </div>
             ))}
             <div className="co-row co-total">
-              <span>Доставка</span>
-              <span>{delivery === 0 ? 'бесплатно' : `${delivery} ₽`}</span>
+              <span>Доставка{zoneInfo.zone ? ` · ${zoneInfo.zone.short}` : ''}</span>
+              <span>
+                {isPickup
+                  ? 'самовывоз'
+                  : zoneInfo.status === 'loading'
+                    ? 'определяем…'
+                    : zoneInfo.status === 'idle'
+                      ? 'укажите адрес'
+                      : delivery === 0
+                        ? 'бесплатно'
+                        : `${delivery} ₽`}
+              </span>
             </div>
           </div>
 
@@ -595,6 +654,49 @@ export function CheckoutModal({ open, onClose, onConfirm, items, total, profile,
               </button>
               {pickedAddr === '__custom__' && (
                 <input className="co-input" placeholder="Улица, дом, квартира" value={customAddr} onChange={e => setCustomAddr(e.target.value)} autoFocus/>
+              )}
+              {/* Zone detection status */}
+              {!isPickup && resolvedAddr.trim().length >= 5 && (
+                <div className={`zone-status zone-status-${zoneInfo.status}`} style={{
+                  marginTop: 10,
+                  padding: '10px 12px',
+                  borderRadius: 10,
+                  fontSize: 13,
+                  background:
+                    zoneInfo.status === 'loading' ? 'rgba(180,180,180,0.10)' :
+                    zoneInfo.status === 'found' && zoneInfo.zone ? `${zoneInfo.zone.color}1A` :
+                    zoneInfo.status === 'not-found' || zoneInfo.status === 'error' ? 'rgba(220, 140, 40, 0.12)' :
+                    'transparent',
+                  color:
+                    zoneInfo.status === 'found' && zoneInfo.zone ? zoneInfo.zone.color :
+                    zoneInfo.status === 'not-found' || zoneInfo.status === 'error' ? '#A65A00' :
+                    'var(--ink-mute)',
+                  border: zoneInfo.status === 'found' && zoneInfo.zone ? `1px solid ${zoneInfo.zone.color}33` : '1px solid transparent',
+                }}>
+                  {zoneInfo.status === 'loading' && '🔍 Определяем зону доставки…'}
+                  {zoneInfo.status === 'found' && zoneInfo.zone && (
+                    <>
+                      ✓ <strong>{zoneInfo.zone.name}</strong>
+                      {' · '}
+                      {zoneInfo.delivery.free ? (
+                        <span>доставка бесплатно</span>
+                      ) : (
+                        <span>доставка {zoneInfo.delivery.price} ₽
+                          {zoneInfo.zone.freeFrom > 0 && total < zoneInfo.zone.freeFrom && (
+                            <> · бесплатно от {zoneInfo.zone.freeFrom} ₽</>
+                          )}
+                        </span>
+                      )}
+                      {zoneInfo.zone.eta && <> · ~{zoneInfo.zone.eta} мин</>}
+                    </>
+                  )}
+                  {zoneInfo.status === 'not-found' && (
+                    <>⚠ Адрес вне основных зон. Оператор уточнит стоимость доставки по телефону. Базовая ставка — {zoneInfo.delivery.price} ₽.</>
+                  )}
+                  {zoneInfo.status === 'error' && (
+                    <>⚠ Не удалось проверить адрес. Базовая ставка доставки — {zoneInfo.delivery.price} ₽.</>
+                  )}
+                </div>
               )}
             </div>
           )}
